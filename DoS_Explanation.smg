@@ -1,0 +1,189 @@
+smg
+
+//player sys ha_system, Eliminate, Outgun, [blackholeAttacker],[throttleSuspicious],[enlistServers],[lowerFidelity] endplayer
+//player sys ha_system, Outgun, [enlistServers],[lowerFidelity] endplayer
+player sys ha_system, Eliminate, [blackholeAttacker],[throttleSuspicious],[explain_ts],[explain_ba] endplayer
+//player sys ha_system, Eliminate, [blackholeAttacker],[throttleSuspicious] endplayer
+player env environment endplayer
+player ope operator endplayer
+const ENVT=0; const SYST=1; const OPER =2;
+global turn:[ENVT..OPER] init ENVT;
+
+module environment
+	t:[0..MAX_TIME] init 0;
+	[] (turn=ENVT) & (t<MAX_TIME) -> (t'=t+1) & (turn'=SYST);
+endmodule
+
+
+
+//const INIT_TRAIN ;   //initilization of human willingness and capability denoted as the training level
+const INIT_WILL_BA = 80;// initilization of human capability for tactic blackhole
+const INIT_CAP_BA = 80; // initilization of human willingness for tactic throttle
+const INIT_WILL_TS = 80;// initilization of human capability for tactic blackhole
+const INIT_CAP_TS = 80; // initilization of human willingness for tactic throttle
+const COMP_TIME_ba = 2;   //explanation comprehension time needed by human operator (i.e., explanation costs)
+const COMP_TIME_ts = 2;   //explanation comprehension time needed by human operator (i.e., explanation costs)
+//const DELTA;           //explanation effect
+const DELTA_WILL_IMPACT = 10; //floor(pow(DELTA,0.5)); //explanation effect on willingness
+const DELTA_CAP_IMPACT = 10; //floor(pow(DELTA,0.5));  //explanation effect on capability
+module operator 
+	op_onLocation: bool init true;   //operator is on location
+	op_busy:bool init false;         //operator is not busy
+	will_ba: [0..100] init INIT_WILL_BA;   //operator's willingness to perform tactic blackholing
+	cap_ba:[0..100] init INIT_CAP_BA;      //operator's capability to successfully perform tactic blackholing
+	will_ts: [0..100] init INIT_WILL_TS;   //operator's willingness to perform tactic throttle
+	cap_ts:[0..100] init INIT_CAP_TS;      //operator's capability to successfully perform tactic throttle
+
+	exp_ts_done: bool init false;    //denoting whether operator receives the explanation for tactic throttle
+	exp_ba_done: bool init false;    //denoting whether operator receives the explanation for tactic blackholing
+
+	ba_done:bool init false;      //denoting whether operator receives the tasks of blackholing
+	ts_done: bool init false;     //denoting whether operator receives the tasks of throttle 
+	
+	cnt_ba : [0..MAX_TIME] init 0;    //the latency of tactic blackholing
+	cnt_ts : [0..MAX_TIME] init 0;    //the latency of tactic throttle
+	cnt_compExpba : [0..MAX_TIME] init 0;  //the latency of explanation comprehension for blackholing
+	cnt_compExpts : [0..MAX_TIME] init 0;  //the latency of explanation comprehension for throttle
+	
+	[explain_ba] (cnt_compExpba = 0)&(op_onLocation)&(!op_busy)&(exp_ba_done=false) -> (op_busy'=true)&(cnt_compExpba'=1);
+	[](turn=OPER)&(cnt_compExpba>0)&(cnt_compExpba<=COMP_TIME_ba) -> (cnt_compExpba'=cnt_compExpba+1)&(turn'=ENVT);
+	[](turn=OPER)&(cnt_compExpba=COMP_TIME_ba+1) -> (exp_ba_done'=true)&
+		(cnt_compExpba'=0)&(cap_ba'=min((cap_ba+DELTA_CAP_IMPACT),100))&(will_ba'=min((will_ba+DELTA_CAP_IMPACT),100))&(turn'=ENVT)&(op_busy'=false);
+
+	[blackholeAttacker](op_onLocation)&(!op_busy)&(cnt_ba=0)&(ba_done=false)->(cnt_ba'=1)&(op_busy'=true);
+	[](turn=OPER)&(cnt_ba>0)&(cnt_ba<=ba_latency)->(cnt_ba'=cnt_ba+1)&(turn'=ENVT);
+	[](turn=OPER)&(cnt_ba=ba_latency+1)->(cnt_ba'=0)&(turn'=ENVT)&(op_busy'=false)&(ba_done'=true);
+
+	[explain_ts] (cnt_compExpts = 0)&(op_onLocation)&(!op_busy)&(exp_ts_done=false) -> (op_busy'=true)&(cnt_compExpts'=1);
+	[](turn=OPER)&(cnt_compExpts>0)&(cnt_compExpts<=COMP_TIME_ts) -> (cnt_compExpts'=cnt_compExpts+1)&(turn'=ENVT);
+	[](turn=OPER)&(cnt_compExpts=COMP_TIME_ts+1) -> (exp_ts_done'=true)&
+		(cnt_compExpts'=0)&(cap_ts'=min((cap_ts+DELTA_CAP_IMPACT),100))&(will_ts'=min((will_ts+DELTA_CAP_IMPACT),100))&(turn'=ENVT)&(op_busy'=false);
+
+	[throttleSuspicious](op_onLocation)&(!op_busy)&(cnt_ts=0)&(ts_done=false)->(cnt_ts'=1)&(op_busy'=true)&(turn'=ENVT);
+	[](turn=OPER)&(cnt_ts>0)&(cnt_ts<=ts_latency)->(cnt_ts'=cnt_ts+1)&(turn'=ENVT);
+	[](turn=OPER)&(cnt_ts=ts_latency+1)->(cnt_ts'=0)&(turn'=ENVT)&(op_busy'=false)&(ts_done'=true);
+
+	[](turn=OPER)& (cnt_ba=0) & (cnt_ts=0) & (cnt_compExpba=0) &(cnt_compExpts=0) -> (turn'= ENVT);
+endmodule
+
+formula op_f_c_ts = cap_ts>0? (cap_ts<100? cap_ts/100:1):0;
+formula op_f_w_ts = will_ts>0? (will_ts<100? will_ts/100:1):0;
+formula op_wc_prob_ts = op_f_w_ts * op_f_c_ts;
+formula op_f_c_ba = cap_ba>0? (cap_ba<100? cap_ba/100:1):0;
+formula op_f_w_ba = will_ba>0? (will_ba<100? will_ba/100:1):0;
+formula op_wc_prob_ba = op_f_w_ba * op_f_c_ba;
+const double es_prob = 0.8;
+const double lf_prob = 0.9;
+
+const MAX_TIME = 50;             //maximum time horizon
+const scenario = 1;              //scenrio with different priority
+const MAX_SERVERS = 4;           // Maximum available servers
+const init_rt = 3000;            // Initial response time to good clients
+const init_mc;                   // Initial percentage of malicious clients
+const init_as = 3;               // Number of servers initially enabled
+const init_ua = 10;              // User annoyance
+const MAX_RT=4000;               //the threshold of response time
+const MAX_COST = MAX_SERVERS*cps;//the cost of enabling all the servers
+const cps =10;                   // Cost per server
+const cpf =1;                    // Cost per fidelity
+const ba_latency = 10;           //latency of tactic blackholing
+const ts_latency = 10;           //latency of throttle
+const es_latency = 1;            //latency of enable server
+const lf_latency = 1;            //latency of lower fidelity
+
+//response time cost/benefit
+formula es_f_rt = rt-1000*es_prob >=0 ? (rt-1000*es_prob<=MAX_RT? floor(rt-1000*es_prob) : MAX_RT) : 0;
+formula lf_f_rt = rt-500*lf_prob >=0 ? (rt-500*lf_prob<=MAX_RT? floor(rt-500*lf_prob) : MAX_RT) : 0;
+formula ba_f_rt = rt-1000*op_wc_prob_ba >=0 ? (rt-1000*op_wc_prob_ba<=MAX_RT? floor(rt-1000*op_wc_prob_ba) : MAX_RT) : 0;
+formula ts_f_rt = rt-500*op_wc_prob_ts >=0 ? (rt-500*op_wc_prob_ts<=MAX_RT? floor(rt-500*op_wc_prob_ts) : MAX_RT) : 0;
+//malicious clients
+formula ba_f_mc = mc-op_wc_prob_ba*mc>=0?(mc-op_wc_prob_ba<=100? floor(mc-op_wc_prob_ba*mc):100):0;
+//cost 
+formula es_f_cost = cost+cps*es_prob >=0 ? (cost+cps*es_prob<=MAX_COST? floor(cost+cps*es_prob) : MAX_COST):0;
+formula lf_f_cost = cost-cpf*lf_prob >=0 ? (cost-cpf*lf_prob<=MAX_COST? floor(cost-cpf*lf_prob) : MAX_COST):0;
+//user annoyance
+formula ba_f_ua = ua+(1-op_wc_prob_ba)*50>=0?(ua+(1-op_wc_prob_ba)*50<=100? floor(ua+(1-op_wc_prob_ba)*50):100):0;
+formula ts_f_ua = ua+(1-op_wc_prob_ts)*25>=0?(ua+(1-op_wc_prob_ts)*25<=100? floor(ua+(1-op_wc_prob_ts)*25):100):0;
+
+
+
+
+module ha_system
+	as : [0..MAX_SERVERS] init init_as; //active servers
+	rt : [0..MAX_RT] init init_rt; //response time
+	mc : [0..100] init init_mc; // Malicious clients
+	ua : [0..100] init init_ua; // level of annoyance
+	cost : [0..MAX_COST] init init_as*cps;
+	cnt_es : [0..MAX_TIME] init 0;
+	cnt_lf : [0..MAX_TIME] init 0;
+	es_done :bool init false;
+	lf_done :bool init false;
+
+	[explain_ts](turn=SYST)&(exp_ts_done=false) -> (turn'=OPER);
+
+	[explain_ba](turn=SYST)&(exp_ba_done=false) -> (turn'=OPER);
+
+	[blackholeAttacker](turn=SYST)&(cnt_ba=0)&(ba_done=false) -> (turn'=OPER);
+	[](turn=SYST)&(cnt_ba>0)&(cnt_ba<=ba_latency)->(turn'=OPER);
+	[](turn=SYST)&(cnt_ba=ba_latency+1)->(rt'=ba_f_rt)&(mc'=ba_f_mc)&(ua'=ba_f_ua)&(turn'=OPER);
+
+	[throttleSuspicious](turn=SYST)&(cnt_ts=0)&(ts_done=false) -> (turn'=OPER);
+	[](turn=SYST)&(cnt_ts>0)&(cnt_ts<=ts_latency)->(turn'=OPER);
+	[](turn=SYST)&(cnt_ts=ts_latency+1)->(rt'=ts_f_rt)&(ua'=ts_f_ua)&(turn'=OPER);
+
+
+//	[enlistServers](turn=SYST)&(as<MAX_SERVERS)&(cnt_es=0)&(es_done=false)->(cnt_es'=1)&(turn'=ENVT);
+//	[](turn=SYST)&(cnt_es>0)&(cnt_es<es_latency)->(cnt_es'=cnt_es+1)&(turn'=ENVT);
+//	[](turn=SYST)&(cnt_es=es_latency)->(cnt_es'=0)&(rt'=es_f_rt)&(cost'=es_f_cost)&(turn'=ENVT)&(es_done'=true);
+
+//	[lowerFidelity](turn=SYST)&(cnt_lf=0)&(lf_done=false)->(cnt_lf'=1)&(turn'=ENVT);
+//	[](turn=SYST)&(cnt_lf>0)&(cnt_lf<lf_latency)->(cnt_lf'=cnt_lf+1)&(turn'=ENVT);
+//	[](turn=SYST)&(cnt_lf=lf_latency)->(cnt_lf'=0)&(rt'=lf_f_rt)&(cost'=lf_f_cost)&(turn'=ENVT)&(lf_done'=true);
+
+	[](turn=SYST)&(cnt_es=0)&(cnt_ba=0)&(cnt_lf=0)&(cnt_ts=0) -> (turn'=OPER);
+endmodule
+
+module Eliminate
+	ba_trigger_t:[0..MAX_TIME] init 0;
+	[blackholeAttacker] (turn=SYST) -> (ba_trigger_t'=t);
+	[throttleSuspicious](turn=SYST)&(t>ba_trigger_t+ba_latency)->true;
+endmodule
+
+
+//module Outgun
+//	es_trigger_t:[0..MAX_TIME] init 0;
+//	[enlistServers](turn=SYST)->(es_trigger_t'=t);
+//	[lowerFidelity](turn=SYST)&(t>es_trigger_t+es_latency)->true;
+//endmodule
+
+
+
+rewards "rGU"
+	turn = SYST & scenario=1 : 0.15*uR +0.6*uM +0.1*uC +0.15*uA; // Scenario 1: priority is minimizing malicious clients
+	turn = SYST & scenario=2 : 0.3*uR  +0.3*uM +0.1*uC +0.3*uA; // Scenario 2: priority is keeping good clients happy
+	turn = SYST & scenario=3 : 0.2*uR  +0.2*uM +0.4*uC +0.2*uA; // Scenario 3: priority is keeping costs down	
+endrewards
+
+
+
+formula uC = (cost>=0 & cost<1?		1+(0.9-1)*(((cost/cps)-0)/(1-0))	:0)
+	    +(cost>=1 & cost<2?		0.9+(0.3-0.9)*(((cost/cps)-1)/(2-1))	:0)
+	    +(cost>=2 & cost<3?		0.3+(0.1-0.3)*(((cost/cps)-2)/(3-2))	:0)
+	    +(cost>=3?	0.1:0);
+
+formula uA = (ua>0 & ua <=100?	1-(ua/100)	:0);
+
+formula uM = (mc>=0 & mc <=5? 1 : 0)
+	    +(mc>5  & mc <=20? 1+(0.80-1)*((mc-5)/(20-5))	:0)
+	    +(mc>20  & mc <=50? 0.80+(0.40-0.80)*((mc-20)/(50-20))	:0)
+	    +(mc>50  & mc <=70? 0.40+(0.00-0.40)*((mc-50)/(70-50))	:0)
+	    +(mc>70 ? 0:0);
+
+formula uR = (rt>=0 & rt<=100? 1:0)
+ 	    +(rt>100 & rt<=200?    1+(0.99-1)*((rt-100)/(200-100))         :0)
+	    +(rt>200 & rt<=500?    0.99+(0.90-0.99)*((rt-200)/(500-200))   :0)
+	    +(rt>500 & rt<=1000?   0.90+(0.75-0.90)*((rt-500)/(1000-500))  :0)
+	    +(rt>1000 & rt<=1500?  0.75+(0.5-0.75)*((rt-1000)/(1500-1000)) :0)
+	    +(rt>1500 & rt<=2000?  0.5+(0.25-0.5)*((rt-1500)/(2000-1500))  :0)
+	    +(rt>2000 & rt<=4000?  0.25+(0-0.25)*((rt-2000)/(4000-2000))   :0)
+	    +(rt>4000 ? 0:0);
