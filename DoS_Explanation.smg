@@ -73,7 +73,8 @@ formula op_f_c_ts = cap_ts>0? (cap_ts<100? cap_ts/100:1):0;
 formula op_f_w_ts = will_ts>0? (will_ts<100? will_ts/100:1):0;
 //formula op_wc_prob_ts = op_f_w_ts * op_f_c_ts;
 //formula op_wc_prob_ts = (op_f_w_ts + op_f_c_ts)/2;
-formula op_f_c_ba = cap_ba>0? (cap_ba<100? cap_ba/100:1):0;
+//formula op_f_c_ba = cap_ba>0? (cap_ba<100? cap_ba/100:1):0;
+formula op_f_c_ba = cap_ba>0? (cap_ba<100? (cap_ba>33?(cap_ba/66):cap_ba/100):1):0; // If capability above 33% impact additionally increased by 1/3rd (much more confidence above that threshold)
 formula op_f_w_ba = will_ba>0? (will_ba<100? will_ba/100:1):0;
 //formula op_wc_prob_ba = op_f_w_ba * op_f_c_ba;
 //formula op_wc_prob_ba = (op_f_w_ba + op_f_c_ba)/2;
@@ -146,13 +147,13 @@ module ha_system
 	[blackholeAttacker](turn=SYST)&(cnt_ba=0)&(ba_done=false) -> (turn'=OPER);
 	[](turn=SYST)&(cnt_ba>0)&(cnt_ba<=ba_latency)->(turn'=OPER);
 	[](turn=SYST)&(cnt_ba=ba_latency+1)->
-              op_f_w_ba:  (rt'=ba_f_rt)&(mc'=ba_f_mc)&(ua'=ba_f_ua)&(turn'=OPER)
+              op_f_w_ba:  (rt'=penalty_ba_rt)&(mc'=ba_f_mc)&(ua'=ba_f_ua)&(turn'=OPER)
           + (1-op_f_w_ba):(turn'=OPER)&(ba_fail'=true);
 
 	[throttleSuspicious](turn=SYST)&(cnt_ts=0)&(ts_done=false) -> (turn'=OPER);
 	[](turn=SYST)&(cnt_ts>0)&(cnt_ts<=ts_latency)->(turn'=OPER);
 	[](turn=SYST)&(cnt_ts=ts_latency+1)->
-              op_f_w_ts:  (rt'=ts_f_rt)&(ua'=ts_f_ua)&(turn'=OPER)
+              op_f_w_ts:  (rt'=penalty_ts_rt)&(ua'=ts_f_ua)&(turn'=OPER)
          + (1-op_f_w_ts): (turn'=OPER);
 
 
@@ -199,6 +200,9 @@ endmodule
 //	[lowerFidelity](turn=SYST)&(t>trigger_t3+es_latency)->true;
 //endmodule
 
+const MAX_LATENCY=10;
+formula penalty_ts_rt = max(100, floor( ts_f_rt * (pow(1+(costExp/MAX_LATENCY),2)))); // Quadratic penalty associated with latency models that small periods
+formula penalty_ba_rt = max(100, floor( ba_f_rt * (pow(1+(costExp/MAX_LATENCY),2)))); // with high response time are OK and longer periods are much worse.
 
 
 rewards "rGU"
