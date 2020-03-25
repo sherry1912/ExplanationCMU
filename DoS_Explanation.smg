@@ -17,16 +17,20 @@ endmodule
 
 
 
-const INIT_TRAIN = 80 ;   //initilization of human willingness and capability denoted as the training level
-const INIT_WILL_BA = 50;// initilization of human capability for tactic blackhole
+
+const INIT_TRAIN;   //initilization of human willingness and capability denoted as the training level
+const INIT_MC;                   // Initial percentage of malicious clients
+const INIT_WILL_BA = 80;// initilization of human capability for tactic blackhole
 const INIT_CAP_BA = INIT_TRAIN; // initilization of human willingness for tactic throttle
-const INIT_WILL_TS = 50;// initilization of human capability for tactic blackhole
+const INIT_WILL_TS = 80;// initilization of human capability for tactic blackhole
 const INIT_CAP_TS = INIT_TRAIN; // initilization of human willingness for tactic throttle
-const costExp;
-const exp_ba_latency = costExp;   //explanation comprehension time needed by human operator (i.e., explanation costs)
-const exp_ts_latency = costExp;   //explanation comprehension time needed by human operator (i.e., explanation costs)
-const DELTA;           //explanation effect
-const DELTA_WILL = 0; //floor(pow(DELTA,0.5)); //explanation effect on willingness
+const Explanation_Latency = 3;
+formula penalty_ba = pow(0.99,pow(exp_ba_latency,2));
+formula penalty_ts = pow(0.99,pow(exp_ba_latency,2));
+const exp_ba_latency = Explanation_Latency;   //explanation comprehension time needed by human operator (i.e., explanation costs)
+const exp_ts_latency = Explanation_Latency;   //explanation comprehension time needed by human operator (i.e., explanation costs)
+const DELTA = 30;           //explanation effect
+const DELTA_WILL = 20; //floor(pow(DELTA,0.5)); //explanation effect on willingness
 const DELTA_CAP = DELTA; //floor(pow(DELTA,0.5));  //explanation effect on capability
 module operator 
 	op_onLocation: bool init true;   //operator is on location
@@ -69,12 +73,21 @@ module operator
       
 endmodule
 
-formula op_f_c_ts = cap_ts>0? (cap_ts<100? cap_ts/100:1):0;
+//formula op_f_c_ts = cap_ts>0? (cap_ts<100? cap_ts/100:1):0;
+formula op_f_c_ts = (cap_ts>0 & cap_ts <=25? 0.1*(cap_ts-0)/25 : 0)
+	           +(cap_ts>25  & cap_ts <=50? 0.1+0.2*(cap_ts-25)/25:0)
+	           +(cap_ts>50 & cap_ts <=80? 0.3+0.6*(cap_ts-50)/30:0)
+	           +(cap_ts>80  & cap_ts <=100? 0.9+0.1*(cap_ts-80)/20:0)
+	           +(cap_ts>100 ? 1:0);
 formula op_f_w_ts = will_ts>0? (will_ts<100? will_ts/100:1):0;
 //formula op_wc_prob_ts = op_f_w_ts * op_f_c_ts;
 //formula op_wc_prob_ts = (op_f_w_ts + op_f_c_ts)/2;
 //formula op_f_c_ba = cap_ba>0? (cap_ba<100? cap_ba/100:1):0;
-formula op_f_c_ba = cap_ba>0? (cap_ba<100? (cap_ba>33?(cap_ba/66):cap_ba/100):1):0; // If capability above 33% impact additionally increased by 1/3rd (much more confidence above that threshold)
+formula op_f_c_ba = (cap_ba>0 & cap_ba <=25? 0.1*(cap_ba-0)/25 : 0)
+	           +(cap_ba>25  & cap_ba <=50? 0.1+0.2*(cap_ba-25)/25:0)
+	           +(cap_ba>50 & cap_ba <=80? 0.3+0.6*(cap_ba-50)/30:0)
+	           +(cap_ba>80  & cap_ba <=100? 0.9+0.1*(cap_ba-80)/20:0)
+	           +(cap_ba>100 ? 1:0);
 formula op_f_w_ba = will_ba>0? (will_ba<100? will_ba/100:1):0;
 //formula op_wc_prob_ba = op_f_w_ba * op_f_c_ba;
 //formula op_wc_prob_ba = (op_f_w_ba + op_f_c_ba)/2;
@@ -85,7 +98,6 @@ const MAX_TIME = 50;             //maximum time horizon
 const scenario = 1;              //scenrio with different priority
 const MAX_SERVERS = 4;           // Maximum available servers
 const init_rt = 3000;            // Initial response time to good clients
-const init_mc = 50;                   // Initial percentage of malicious clients
 const init_as = 3;               // Number of servers initially enabled
 const init_ua = 10;              // User annoyance
 const MAX_RT=4000;               //the threshold of response time
@@ -114,10 +126,10 @@ const lf_latency = 1;            //latency of lower fidelity
 //response time cost/benefit
 formula es_f_rt = rt-1000 >=0 ? (rt-1000<=MAX_RT? floor(rt-1000) : MAX_RT) : 0;
 formula lf_f_rt = rt-500 >=0 ? (rt-500<=MAX_RT? floor(rt-500) : MAX_RT) : 0;
-formula ba_f_rt = rt-1000*op_f_c_ba >=0 ? (rt-1000*op_f_c_ba<=MAX_RT? floor(rt-1000*op_f_c_ba) : MAX_RT) : 0;
-formula ts_f_rt = rt-500*op_f_c_ts >=0 ? (rt-500*op_f_c_ts<=MAX_RT? floor(rt-500*op_f_c_ts) : MAX_RT) : 0;
+formula ba_f_rt = rt-1000*op_f_c_ba >=0 ? (rt-1000*op_f_c_ba<=MAX_RT? floor((rt-penalty_ba*1000*op_f_c_ba)) : MAX_RT) : 0;
+formula ts_f_rt = rt-500*op_f_c_ts >=0 ? (rt-500*op_f_c_ts<=MAX_RT? floor((rt-penalty_ts*500*op_f_c_ts)) : MAX_RT) : 0;
 //malicious clients
-formula ba_f_mc = mc-op_f_c_ba*mc>=0?(mc-op_f_c_ba<=100? floor(mc-op_f_c_ba*mc):100):0;
+formula ba_f_mc = mc-op_f_c_ba*mc>=0?(mc-op_f_c_ba<=100? floor(mc-penalty_ba*op_f_c_ba*mc):100):0;
 //cost 
 formula es_f_cost = cost+cps >=0 ? (cost+cps<=MAX_COST? floor(cost+cps) : MAX_COST):0;
 formula lf_f_cost = cost-cpf >=0 ? (cost-cpf<=MAX_COST? floor(cost-cpf) : MAX_COST):0;
@@ -130,7 +142,7 @@ formula ts_f_ua = ua+(1-op_f_c_ts)*25>=0?(ua+(1-op_f_c_ts)*25<=100? floor(ua+(1-
 module ha_system
 	as : [0..MAX_SERVERS] init init_as; //active servers
 	rt : [0..MAX_RT] init init_rt; //response time
-	mc : [0..100] init init_mc; // Malicious clients
+	mc : [0..100] init INIT_MC; // Malicious clients
 	ua : [0..100] init init_ua; // level of annoyance
 	cost : [0..MAX_COST] init init_as*cps;
 	cnt_es : [0..MAX_TIME] init 0;
@@ -147,13 +159,14 @@ module ha_system
 	[blackholeAttacker](turn=SYST)&(cnt_ba=0)&(ba_done=false) -> (turn'=OPER);
 	[](turn=SYST)&(cnt_ba>0)&(cnt_ba<=ba_latency)->(turn'=OPER);
 	[](turn=SYST)&(cnt_ba=ba_latency+1)->
-              op_f_w_ba:  (rt'=penalty_ba_rt)&(mc'=ba_f_mc)&(ua'=ba_f_ua)&(turn'=OPER)
+               op_f_w_ba:  (rt'=ba_f_rt)&(mc'=ba_f_mc)&(ua'=ba_f_ua)&(turn'=OPER)
+//              op_f_w_ba:  (rt'=ba_f_rt)&(mc'=ba_f_mc)&(ua'=ba_f_ua)&(turn'=OPER)
           + (1-op_f_w_ba):(turn'=OPER)&(ba_fail'=true);
 
 	[throttleSuspicious](turn=SYST)&(cnt_ts=0)&(ts_done=false) -> (turn'=OPER);
 	[](turn=SYST)&(cnt_ts>0)&(cnt_ts<=ts_latency)->(turn'=OPER);
 	[](turn=SYST)&(cnt_ts=ts_latency+1)->
-              op_f_w_ts:  (rt'=penalty_ts_rt)&(ua'=ts_f_ua)&(turn'=OPER)
+              op_f_w_ts:  (rt'=ts_f_rt)&(ua'=ts_f_ua)&(turn'=OPER)
          + (1-op_f_w_ts): (turn'=OPER);
 
 
@@ -200,9 +213,6 @@ endmodule
 //	[lowerFidelity](turn=SYST)&(t>trigger_t3+es_latency)->true;
 //endmodule
 
-const MAX_LATENCY=10;
-formula penalty_ts_rt = max(100, floor( ts_f_rt * (pow(1+(costExp/MAX_LATENCY),2)))); // Quadratic penalty associated with latency models that small periods
-formula penalty_ba_rt = max(100, floor( ba_f_rt * (pow(1+(costExp/MAX_LATENCY),2)))); // with high response time are OK and longer periods are much worse.
 
 
 rewards "rGU"
